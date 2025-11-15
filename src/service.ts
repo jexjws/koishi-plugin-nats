@@ -1,9 +1,7 @@
 import { Context, Service, Schema, Logger } from 'koishi'
-// 导入 NATS 客户端库
 import { connect, NatsConnection, ConnectionOptions } from 'nats'
 
-// --- 1. 定义配置 (Config) ---
-// 这对应 Service 中的 [symbols.config] 概念
+
 export interface Config {
   servers: Array<string>;
   options?: Omit<ConnectionOptions, 'servers'>;
@@ -14,25 +12,20 @@ export const Config = Schema.object({
   options: Schema.object({}).description('NATS 连接选项').default({}),
 })
 
-// --- 2. 定义 NatsService ---
-// 继承 Service 类
 export class NatsService extends Service {
   public client: NatsConnection | null = null;
+  #l: Logger;
 
-  // 参考 service.ts 的构造函数
-  // 传入 ctx 和 config
   constructor(ctx: Context, config: Config) {
     // 'nats' 是服务名称，之后可通过 ctx.nats 访问
     // 调用 super 会自动通过 ctx.reflect.provide 将服务注册到上下文中
     super(ctx, 'nats')
+    this.#l = ctx.logger(name)
   }
 
-  /**
-   * 启动服务：连接到 NATS 服务器
-   */
   async start() {
     if (this.client) {
-      this.ctx.logger.warn('NATS 客户端已连接，无需重复启动。')
+      this.#l.warn('NATS 客户端已连接，无需重复启动。')
       return
     }
 
@@ -42,122 +35,85 @@ export class NatsService extends Service {
     }
 
     try {
-      this.ctx.logger.info(`正在连接到 NATS 服务器: ${this.config.servers}`)
+      this.#l.info(`正在连接到 NATS 服务器: ${this.config.servers}`)
       this.client = await connect(connectOptions)
-      this.ctx.logger.info('成功连接到 NATS 服务器。')
+      this.#l.success('成功连接到 NATS 服务器。')
 
-      // 启动一个异步任务来监听 NATS 状态
+      // 起一个异步任务来监听 本次连接的 状态
       this.handleStatusUpdates(this.client)
     } catch (error) {
-      this.ctx.logger.error('连接 NATS 服务器失败:', error)
+      this.#l.error('连接 NATS 服务器失败:', error)
       this.client = null
     }
   }
 
-  /**
-   * 停止服务：断开 NATS 连接
-   */
-  async destroy() {
+
+  async stop() {
     if (this.client) {
-      this.ctx.logger.info('正在断开 NATS 连接...')
+      this.#l.info('正在断开 NATS 连接...')
       // drain() 会确保所有待处理消息发送完毕再关闭
       await this.client.drain()
 
       this.client = null
-      this.ctx.logger.info('已安全断开 NATS 连接。')
+      this.#l.success('已安全断开 NATS 连接。')
     }
   }
 
-  /**
-   * 监听 NATS 客户端状态变化
-   */
   private async handleStatusUpdates(client: NatsConnection) {
     try {
-      for await (const status of client.status()) {
+      const statusIterator = client.status()[Symbol.asyncIterator]()
+      const closedPromise = client.closed()
+
+      while (true) {
+        const result = await Promise.race([
+          statusIterator.next(),
+          closedPromise.then((err) => ({ value: { type: 'closed', err }, done: true })),
+        ])
+
+        if (result.done) {
+          // 命中 client.closed()
+          const { err } = result.value as { type: 'closed', err: void | Error }
+          if (err) {
+            this.#l.error('NATS 连接因错误而关闭:', err.message)
+          } else {
+            this.#l.info('NATS 连接已正常关闭')
+          }
+          this.client = null
+          break
+        }
+
+        const status = result.value
         switch (status.type) {
           case 'error':
-            this.ctx.logger.error('NATS 发生错误:', status.data)
+            this.#l.error('NATS 出错:', status.error || status.data)
             break
           case 'disconnect':
-            this.ctx.logger.warn('NATS 连接已断开。')
+            this.#l.warn('已断开与 NATS 服务器的连接')
             break
           case 'reconnect':
-            this.ctx.logger.info('NATS 正在重新连接...')
+            this.#l.success('重连成功！')
+            break
+          case 'reconnecting':
+            this.#l.info('正在重连...')
+            break
+          case 'staleConnection':
+            this.#l.debug('NATS 连接陈旧')
+            break
+          case 'ldm':
+            this.#l.warn('当前 NATS 服务器进入 跛脚鸭模式')
+            break
+          case 'update':
+            this.#l.debug('NATS 集群配置更新:', status.data)
             break
           default:
-            this.ctx.logger.debug(`NATS 状态更新: ${status.type}`, status.data)
+            this.#l.debug(`NATS 状态更新: ${status.type}`)
         }
       }
     } catch (err) {
-      this.ctx.logger.error('NATS 状态监听器异常退出:', err)
-    }
-  }
-
-  /**
-   * (可选) 封装 NATS 的核心方法
-   * 确保在使用前检查客户端是否连接
-   */
-  
-  /**
-   * 发布消息
-   * @param subject 主题
-   * @param data 消息数据
-   */
-  publish(subject: string, data?: Uint8Array) {
-    if (!this.client) {
-      this.ctx.logger.warn('NATS 未连接，无法发布消息。')
-      return
-    }
-    this.client.publish(subject, data)
-  }
-
-  /**
-   * 订阅主题
-   * @param subject 主题
-   * @param callback 回调函数
-   * @returns NATS Subscription 对象
-   */
-  subscribe(subject: string, callback: (data: Uint8Array, subject: string) => void) {
-    if (!this.client) {
-      this.ctx.logger.warn('NATS 未连接，无法订阅。')
-      return
-    }
-    
-    const sub = this.client.subscribe(subject)
-    ;(async () => {
-      for await (const msg of sub) {
-        callback(msg.data, msg.subject)
-      }
-    })().catch(err => {
-      this.ctx.logger.error(`订阅 ${subject} 时出错:`, err)
-    })
-    
-    this.ctx.logger.debug(`已订阅主题: ${subject}`)
-    return sub
-  }
-
-  /**
-   * 请求-响应 模式
-   * @param subject 主题
-   * @param data 请求数据
-   * @param timeout 超时时间 (毫秒)
-   * @returns 响应消息
-   */
-  async request(subject: string, data?: Uint8Array, timeout: number = 5000) {
-    if (!this.client) {
-      this.ctx.logger.warn('NATS 未连接，无法发送请求。')
-      return null
-    }
-    try {
-      return await this.client.request(subject, data, { timeout })
-    } catch (err) {
-      this.ctx.logger.error(`请求 ${subject} 失败:`, err)
-      return null
+      this.#l.error('NATS 状态监听器异常退出:', err)
     }
   }
 }
-
-// --- 3. 插件入口 (apply) ---
 export const name = 'nats'
 
 export const inject = ['logger']
@@ -173,7 +129,7 @@ export function apply(ctx: Context, config: Config) {
   })
 
   ctx.on('dispose', async () => {
-    await natsService.destroy()
+    await natsService.stop()
   })
 }
 
