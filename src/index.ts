@@ -1,4 +1,1 @@
-import {NatsService} from "./service";
-
-
-export default NatsService
+export * from './service'

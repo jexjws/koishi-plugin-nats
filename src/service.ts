@@ -1,25 +1,51 @@
 import { Context, Service, Schema, Logger } from 'koishi'
-import { connect, NatsConnection, ConnectionOptions } from 'nats'
+import { connect, NatsConnection, ConnectionOptions, Authenticator, TlsOptions } from 'nats'
 
 
-export interface Config {
+export interface Config extends ConnectionOptions {
   servers: Array<string>;
-  options?: Omit<ConnectionOptions, 'servers'>;
 }
+
+const Authen = Schema.object({
+  authType: Schema.union([
+    Schema.object({
+      auth_token: Schema.string().required(),
+      
+    }).description('Token'),
+    Schema.object({
+      user: Schema.string().required(),
+      pass: Schema.string()
+    }).description('UserPass'),
+    Schema.object({
+      nkey: Schema.string().required(),
+      sig: Schema.string().required()
+    }).description('NKey'),
+    Schema.object({
+      jwt: Schema.string().required(),
+      nkey: Schema.string(),
+      sig: Schema.string()
+    }).description('JWT')
+  ]),
+})
 
 export const Config = Schema.object({
   servers: Schema.array(String).description('NATS 服务器 URL').required().default(["127.0.0.1:4222"]),
-  options: Schema.object({}).description('NATS 连接选项').default({}),
+  noRandomize: Schema.boolean().description('连接时不随机选择 servers。').default(false),
+  reconnect: Schema.boolean().description('客户端断连后，主动发起重连').default(true),
+  maxReconnectAttempts: Schema.number().description("对每个 服务器 的最大重连尝试次数，设置为 -1 表示永不放弃").default(-1),
+  name: Schema.string().description('客户端名称。设置后，服务器监控页面在提及此客户端时将显示此名称。').default("koishi-plugin-nats"),
+  authenticator: Schema.array(Authen).description('客户端认证方案。当服务器要求认证时，将使用这里的认证方案。'),
 })
 
-export class NatsService extends Service {
+
+class NatsService extends Service {
   public client: NatsConnection | null = null;
   #l: Logger;
-
   constructor(ctx: Context, config: Config) {
     // 'nats' 是服务名称，之后可通过 ctx.nats 访问
     // 调用 super 会自动通过 ctx.reflect.provide 将服务注册到上下文中
     super(ctx, 'nats')
+    this.config = config
     this.#l = ctx.logger(name)
   }
 
@@ -30,8 +56,7 @@ export class NatsService extends Service {
     }
 
     const connectOptions: ConnectionOptions = {
-      servers: this.config.servers,
-      ...this.config.options,
+      ...this.config,
     }
 
     try {
@@ -50,12 +75,9 @@ export class NatsService extends Service {
 
   async stop() {
     if (this.client) {
-      this.#l.info('正在断开 NATS 连接...')
+      this.#l.info('关闭 NATS 连接...')
       // drain() 会确保所有待处理消息发送完毕再关闭
       await this.client.drain()
-
-      this.client = null
-      this.#l.success('已安全断开 NATS 连接。')
     }
   }
 
@@ -114,6 +136,7 @@ export class NatsService extends Service {
     }
   }
 }
+
 export const name = 'nats'
 
 export const inject = ['logger']
