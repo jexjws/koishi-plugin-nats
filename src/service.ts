@@ -1,42 +1,68 @@
 import { Context, Service, Schema, Logger } from 'koishi'
-import { connect, NatsConnection, ConnectionOptions, Authenticator, TlsOptions } from 'nats'
+import { connect, NatsConnection, ConnectionOptions, Authenticator, TlsOptions, nkeyAuthenticator } from 'nats'
+import { schemaToConnectionOptions,Authen,TLS } from './schema-to-nats-connection'
 
 
-export interface Config extends ConnectionOptions {
+export interface Config {
   servers: Array<string>;
+  noRandomize?: boolean;
+  reconnect?: boolean;
+  maxReconnectAttempts?: number;
+  authenticator?: Array<{
+    authType: 'Token' | 'UserPass' | 'NKey' | 'creds_file';
+    auth_token?: string;
+    user?: string;
+    pass?: string;
+    nkey_seed?: string;
+    creds_file?: string;
+  }>;
+  tlsEnabled?: boolean;
+  tlsConfig?: {
+    handshakeFirst?: boolean;
+    certFile?: string;
+    cert?: string;
+    caFile?: string;
+    ca?: string;
+    keyFile?: string;
+    key?: string;
+  };
+  name?: string;
+  noAsyncTraces?: boolean;
+  debug?: boolean;
 }
 
-const Authen = Schema.object({
-  authType: Schema.union([
+export const Config =
+  Schema.intersect([
     Schema.object({
-      auth_token: Schema.string().required(),
-      
-    }).description('Token'),
+      servers: Schema.array(String).description('NATS 服务器 URL').role('table').default(["127.0.0.1:4222"]),
+      noRandomize: Schema.boolean().description('若启用，在实例化连接时，客户端在内部就**不会**打乱servers列表的顺序、也**不会**打乱 对服务器主机名DNS解析出的IP地址列表 的顺序。关闭此选项可实现多个服务器的负载均衡，避免总是优先连接第一个可用服务器').default(false),
+      reconnect: Schema.boolean().description('客户端断连后，主动发起重连').default(true),
+    }).description("连接"),
+    Schema.union([
+      Schema.object({
+        reconnect: Schema.const(true),
+        maxReconnectAttempts: Schema.number().description("对每个 服务器 的最大重连尝试次数，设置为 -1 表示永不放弃重连").default(-1),
+      }),
+      Schema.object({}),
+    ]),
     Schema.object({
-      user: Schema.string().required(),
-      pass: Schema.string()
-    }).description('UserPass'),
+      authenticator: Schema.array(Authen).description('客户端认证方案。当服务器要求认证时，将使用这里的认证方案。'),
+      tlsEnabled: Schema.boolean().description('TLS 可加密客户端与服务器之间的通信，并验证服务器的身份。').default(false),
+    }).description("安全"),
+    Schema.union([
+      Schema.object({
+        tlsEnabled: Schema.const(true).required(),
+        tlsConfig: TLS.required()
+      }),
+      Schema.object({}),
+    ]),
     Schema.object({
-      nkey: Schema.string().required(),
-      sig: Schema.string().required()
-    }).description('NKey'),
-    Schema.object({
-      jwt: Schema.string().required(),
-      nkey: Schema.string(),
-      sig: Schema.string()
-    }).description('JWT')
-  ]),
-})
+      name: Schema.string().description('客户端名称。设置后，NATS 服务器监控页面在提及此客户端时将显示此名称。').default("koishi-bot"),
+      noAsyncTraces: Schema.boolean().description('When `true` the client will not add additional context to errors associated with request operations. Setting this option to `true` will greatly improve performance of request/reply and JetStream publishers.').default(false),
+      debug: Schema.boolean().description('设置为 `true` 时，客户端将使用 javascript console 对象（不是 [koishi Logger](https://koishi.chat/zh-CN/api/utils/logger.html)）打印它接收或发送到服务器的协议消息。').default(false),
+    }).description("杂项"),
 
-export const Config = Schema.object({
-  servers: Schema.array(String).description('NATS 服务器 URL').required().default(["127.0.0.1:4222"]),
-  noRandomize: Schema.boolean().description('连接时不随机选择 servers。').default(false),
-  reconnect: Schema.boolean().description('客户端断连后，主动发起重连').default(true),
-  maxReconnectAttempts: Schema.number().description("对每个 服务器 的最大重连尝试次数，设置为 -1 表示永不放弃").default(-1),
-  name: Schema.string().description('客户端名称。设置后，服务器监控页面在提及此客户端时将显示此名称。').default("koishi-plugin-nats"),
-  authenticator: Schema.array(Authen).description('客户端认证方案。当服务器要求认证时，将使用这里的认证方案。'),
-})
-
+  ])
 
 class NatsService extends Service {
   public client: NatsConnection | null = null;
@@ -44,7 +70,7 @@ class NatsService extends Service {
   constructor(ctx: Context, config: Config) {
     // 'nats' 是服务名称，之后可通过 ctx.nats 访问
     // 调用 super 会自动通过 ctx.reflect.provide 将服务注册到上下文中
-    super(ctx, 'nats')
+    super()
     this.config = config
     this.#l = ctx.logger(name)
   }
@@ -55,12 +81,11 @@ class NatsService extends Service {
       return
     }
 
-    const connectOptions: ConnectionOptions = {
-      ...this.config,
-    }
+    const connectOptions = await schemaToConnectionOptions(this.config)
+
 
     try {
-      this.#l.info(`正在连接到 NATS 服务器: ${this.config.servers}`)
+      this.#l.info(`正在连接到 NATS 服务器...`)
       this.client = await connect(connectOptions)
       this.#l.success('成功连接到 NATS 服务器。')
 
@@ -148,6 +173,7 @@ export function apply(ctx: Context, config: Config) {
   const natsService = new NatsService(ctx, config)
 
   ctx.on('ready', async () => {
+    // ctx.logger.error(config)
     await natsService.start()
   })
 
