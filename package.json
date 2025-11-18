@@ -8,6 +8,10 @@
     "lib",
     "dist"
   ],
+  "repository": {                       
+    "type": "git",
+    "url": "git+https://github.com/jexjws/koishi-plugin-nats.git"
+  },
   "license": "MIT",
   "keywords": [
     "koishi",

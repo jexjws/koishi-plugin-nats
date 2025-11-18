@@ -4,4 +4,6 @@
 
 NATS 是一个简单、安全且高性能的开源数据层，专为云原生应用、物联网消息传递和微服务架构而设计。
 
+## Special thanks
+
 开发参考：koishi-plugin-redis
