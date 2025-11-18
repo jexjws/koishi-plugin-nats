@@ -1,5 +1,5 @@
 import { ConnectionOptions, TlsOptions, tokenAuthenticator, usernamePasswordAuthenticator, nkeyAuthenticator, credsAuthenticator } from 'nats'
-import type {Config} from './service'
+import type { Config } from './service'
 import { Schema } from 'koishi'
 import { readFile } from 'fs/promises'
 
@@ -16,7 +16,7 @@ export const Authen = Schema.intersect([
     Schema.object({
       authType: Schema.const('UserPass').required(),
       user: Schema.string().required().description('https://docs.nats.io/using-nats/developer/connecting/userpass'),
-      pass: Schema.string().role('secret').description("密码")
+      pass: Schema.string().role('secret')
     }),
     Schema.object({
       authType: Schema.const('NKey').required(),
@@ -30,14 +30,14 @@ export const Authen = Schema.intersect([
 ])
 
 export const TLS = Schema.object({
-  handshakeFirst: Schema.boolean().description('启用 TLS 握手优先模式（需要服务器配置 handshakeFirst: true）').default(false),
-  certFile: Schema.path().description('客户端证书文件路径'),
-  cert: Schema.string().description('（或者）客户端证书内容').role('textarea'),
-  caFile: Schema.path().description('CA 证书文件路径'),
-  ca: Schema.string().description('（或者）CA 证书内容').role('textarea'),
-  keyFile: Schema.path().description('客户端私钥文件路径'),
-  key: Schema.string().description('（或者）客户端私钥内容').role('textarea'),
-}).description("TLS 配置")
+  handshakeFirst: Schema.boolean().default(false),
+  certFile: Schema.path(),
+  cert: Schema.string().role('textarea'),
+  caFile: Schema.path(),
+  ca: Schema.string().role('textarea'),
+  keyFile: Schema.path(),
+  key: Schema.string().role('textarea'),
+}).description("TLS Configuration")
 
 
 /**
@@ -76,30 +76,22 @@ export async function schemaToConnectionOptions(config: Config): Promise<Connect
   }
 
   // 处理 TLS 配置
-  if (config.tlsEnabled && config.tlsConfig) {
+  if (config.tlsEnabled) {
     const tlsOptions: TlsOptions = {};
 
     if (config.tlsConfig.handshakeFirst !== undefined) {
       tlsOptions.handshakeFirst = config.tlsConfig.handshakeFirst;
     }
 
-    if (config.tlsConfig.certFile) {
-      tlsOptions.cert = await readFile(config.tlsConfig.certFile, 'utf8');
-    } else if (config.tlsConfig.cert) {
-      tlsOptions.cert = config.tlsConfig.cert;
-    }
+    tlsOptions.certFile = await readFile(config.tlsConfig.certFile, 'utf8');
+    tlsOptions.cert = config.tlsConfig.cert;
 
-    if (config.tlsConfig.keyFile) {
-      tlsOptions.key = await readFile(config.tlsConfig.keyFile, 'utf8');
-    } else if (config.tlsConfig.key) {
-      tlsOptions.key = config.tlsConfig.key;
-    }
+    tlsOptions.keyFile = await readFile(config.tlsConfig.keyFile, 'utf8');
+    tlsOptions.key = config.tlsConfig.key;
 
-    if (config.tlsConfig.caFile) {
-      tlsOptions.ca = await readFile(config.tlsConfig.caFile, 'utf8');
-    } else if (config.tlsConfig.ca) {
-      tlsOptions.ca = config.tlsConfig.ca;
-    }
+    tlsOptions.caFile = await readFile(config.tlsConfig.caFile, 'utf8');
+    tlsOptions.ca = config.tlsConfig.ca;
+
 
     options.tls = tlsOptions;
   }

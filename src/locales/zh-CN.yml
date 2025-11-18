@@ -1,0 +1,22 @@
+commands:
+  nats:
+    description: NATS 消息队列服务
+
+_config:
+  servers: NATS 服务器 URL
+  noRandomize: 若启用，在实例化连接时，客户端在内部就**不会**打乱servers列表的顺序、也**不会**打乱 对服务器主机名DNS解析出的IP地址列表 的顺序。关闭此选项可实现多个服务器的负载均衡，避免总是优先连接第一个可用服务器
+  reconnect: 客户端断连后，主动发起重连
+  maxReconnectAttempts: 对每个服务器的最大重连尝试次数，设置为 -1 表示永不放弃重连
+  authenticator: 客户端认证方案。当服务器要求认证时，将使用这里的认证方案。
+  tlsEnabled: TLS 可加密客户端与服务器之间的通信，并验证服务器的身份。
+  name: 客户端名称。设置后，NATS 服务器监控页面在提及此客户端时将显示此名称。
+  noAsyncTraces: 当设置为 `true` 时，客户端不会为与请求操作相关的错误添加额外的上下文。将此选项设置为 `true` 将大大提高请求/回复和 JetStream 发布者的性能。
+  debug: 设置为 `true` 时，客户端将使用 javascript console 对象（不是 [koishi Logger](https://koishi.chat/zh-CN/api/utils/logger.html)）打印它接收或发送到服务器的协议消息。
+  tlsConfig:
+    handshakeFirst: "启用 TLS 握手优先模式（需要服务器配置 handshakeFirst: true）"
+    certFile: 客户端证书文件路径
+    cert: （或者）客户端证书内容
+    caFile: CA 证书文件路径
+    ca: （或者）CA 证书内容
+    keyFile: 客户端私钥文件路径
+    key: （或者）客户端私钥内容

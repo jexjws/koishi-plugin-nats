@@ -34,21 +34,21 @@ export interface Config {
 export const Config =
   Schema.intersect([
     Schema.object({
-      servers: Schema.array(String).description('NATS 服务器 URL').role('table').default(["127.0.0.1:4222"]),
-      noRandomize: Schema.boolean().description('若启用，在实例化连接时，客户端在内部就**不会**打乱servers列表的顺序、也**不会**打乱 对服务器主机名DNS解析出的IP地址列表 的顺序。关闭此选项可实现多个服务器的负载均衡，避免总是优先连接第一个可用服务器').default(false),
-      reconnect: Schema.boolean().description('客户端断连后，主动发起重连').default(true),
-    }).description("连接"),
+      servers: Schema.array(String).role('table').default(["127.0.0.1:4222"]),
+      noRandomize: Schema.boolean().default(false),
+      reconnect: Schema.boolean().default(true),
+    }).description("Connection"),
     Schema.union([
       Schema.object({
         reconnect: Schema.const(true),
-        maxReconnectAttempts: Schema.number().description("对每个 服务器 的最大重连尝试次数，设置为 -1 表示永不放弃重连").default(-1),
+        maxReconnectAttempts: Schema.number().default(-1),
       }),
       Schema.object({}),
     ]),
     Schema.object({
-      authenticator: Schema.array(Authen).description('客户端认证方案。当服务器要求认证时，将使用这里的认证方案。'),
-      tlsEnabled: Schema.boolean().description('TLS 可加密客户端与服务器之间的通信，并验证服务器的身份。').default(false),
-    }).description("安全"),
+      authenticator: Schema.array(Authen),
+      tlsEnabled: Schema.boolean().default(false),
+    }).description("Security"),
     Schema.union([
       Schema.object({
         tlsEnabled: Schema.const(true).required(),
@@ -57,27 +57,30 @@ export const Config =
       Schema.object({}),
     ]),
     Schema.object({
-      name: Schema.string().description('客户端名称。设置后，NATS 服务器监控页面在提及此客户端时将显示此名称。').default("koishi-bot"),
-      noAsyncTraces: Schema.boolean().description('When `true` the client will not add additional context to errors associated with request operations. Setting this option to `true` will greatly improve performance of request/reply and JetStream publishers.').default(false),
-      debug: Schema.boolean().description('设置为 `true` 时，客户端将使用 javascript console 对象（不是 [koishi Logger](https://koishi.chat/zh-CN/api/utils/logger.html)）打印它接收或发送到服务器的协议消息。').default(false),
-    }).description("杂项"),
+      name: Schema.string().default("koishi-bot"),
+      noAsyncTraces: Schema.boolean().default(false),
+      debug: Schema.boolean().default(false),
+    }).description("Miscellaneous"),
 
-  ])
+  ]).i18n({
+    'zh-CN': require('./locales/zh-CN')._config,
+    'en-US': require('./locales/en-US')._config,
+  })
 
 class NatsService extends Service {
   public client: NatsConnection | null = null;
   #l: Logger;
+  #ctx: Context;
   constructor(ctx: Context, config: Config) {
-    // 'nats' 是服务名称，之后可通过 ctx.nats 访问
-    // 调用 super 会自动通过 ctx.reflect.provide 将服务注册到上下文中
     super()
     this.config = config
     this.#l = ctx.logger(name)
+    this.#ctx = ctx
   }
 
   async start() {
     if (this.client) {
-      this.#l.warn('NATS 客户端已连接，无需重复启动。')
+      this.#l.warn('NATS client is already connected, no need to start again.')
       return
     }
 
@@ -85,14 +88,14 @@ class NatsService extends Service {
 
 
     try {
-      this.#l.info(`正在连接到 NATS 服务器...`)
+      this.#l.info('Connecting to NATS server...')
       this.client = await connect(connectOptions)
-      this.#l.success('成功连接到 NATS 服务器。')
+      this.#l.success('Successfully connected to NATS server.')
 
-      // 起一个异步任务来监听 本次连接的 状态
+      // Start an async task to monitor the connection status
       this.handleStatusUpdates(this.client)
     } catch (error) {
-      this.#l.error('连接 NATS 服务器失败:', error)
+      this.#l.error('connect to NATS server Failed:', error)
       this.client = null
     }
   }
@@ -100,8 +103,8 @@ class NatsService extends Service {
 
   async stop() {
     if (this.client) {
-      this.#l.info('关闭 NATS 连接...')
-      // drain() 会确保所有待处理消息发送完毕再关闭
+      this.#l.info('Closing NATS connection...')
+      // drain() ensures all pending messages are sent before closing
       await this.client.drain()
     }
   }
@@ -118,12 +121,12 @@ class NatsService extends Service {
         ])
 
         if (result.done) {
-          // 命中 client.closed()
+          // hit client.closed()
           const { err } = result.value as { type: 'closed', err: void | Error }
           if (err) {
-            this.#l.error('NATS 连接因错误而关闭:', err.message)
+            this.#l.error('NATS connection closed due to error:', err.message)
           } else {
-            this.#l.info('NATS 连接已正常关闭')
+            this.#l.info('NATS connection closed normally')
           }
           this.client = null
           break
@@ -132,32 +135,32 @@ class NatsService extends Service {
         const status = result.value
         switch (status.type) {
           case 'error':
-            this.#l.error('NATS 出错:', status.error || status.data)
+            this.#l.error('NATS error:', status.error || status.data)
             break
           case 'disconnect':
-            this.#l.warn('已断开与 NATS 服务器的连接')
+            this.#l.warn('Disconnected from NATS server')
             break
           case 'reconnect':
-            this.#l.success('重连成功！')
+            this.#l.success('Reconnected successfully!')
             break
           case 'reconnecting':
-            this.#l.info('正在重连...')
+            this.#l.info('Reconnecting...')
             break
           case 'staleConnection':
-            this.#l.debug('NATS 连接陈旧')
+            this.#l.debug('NATS connection stale')
             break
           case 'ldm':
-            this.#l.warn('当前 NATS 服务器进入 跛脚鸭模式')
+            this.#l.warn('Current NATS server entered lame duck mode')
             break
           case 'update':
-            this.#l.debug('NATS 集群配置更新:', status.data)
+            this.#l.debug('NATS cluster configuration updated:', status.data)
             break
           default:
-            this.#l.debug(`NATS 状态更新: ${status.type}`)
+            this.#l.debug(`NATS status update: ${status.type}`)
         }
       }
     } catch (err) {
-      this.#l.error('NATS 状态监听器异常退出:', err)
+      this.#l.error('NATS status listener exited abnormally:', err)
     }
   }
 }
@@ -167,13 +170,14 @@ export const name = 'nats'
 export const inject = ['logger']
 
 export function apply(ctx: Context, config: Config) {
+  // 加载本地化资源
+  ctx.i18n.define('zh-CN', require('./locales/zh-CN'))
+  ctx.i18n.define('en-US', require('./locales/en-US'))
   // 1. 实例化服务。
   // 在 Service 的构造函数中，
-  // 插件会自动调用 ctx.reflect.provide('nats', ...) 将自身注册到上下文中。
   const natsService = new NatsService(ctx, config)
-
+  
   ctx.on('ready', async () => {
-    // ctx.logger.error(config)
     await natsService.start()
   })
 
