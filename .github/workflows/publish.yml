@@ -27,5 +27,8 @@ jobs:
       - name: Build
         run: yarn tsc -b
 
+      - name: Pack
+        run: yarn pack
+
       - name: Publish to NPM
         run: npm publish --access public
