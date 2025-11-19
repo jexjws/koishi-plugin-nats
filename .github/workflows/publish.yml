@@ -27,8 +27,9 @@ jobs:
       - name: Build
         run: yarn tsc -b
 
-      - name: Pack
-        run: yarn pack
-
       - name: Publish to NPM
         run: npm publish --access public
+
+      - name: Show NPM logs on failure
+        if: failure()
+        run: cat /home/runner/.npm/_logs/*
