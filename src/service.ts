@@ -52,7 +52,7 @@ export const Config =
     Schema.union([
       Schema.object({
         tlsEnabled: Schema.const(true).required(),
-        tlsConfig: TLS.required()
+        tlsConfig: TLS
       }),
       Schema.object({}),
     ]),
@@ -95,6 +95,7 @@ class NatsService extends Service {
     } catch (error) {
       this.#l.error('connect to NATS server Failed:', error)
       this.client = null
+      throw error
     }
   }
 
@@ -126,6 +127,7 @@ class NatsService extends Service {
           } else {
             this.#l.info('NATS connection closed normally')
           }
+          // TODO 断掉之后要不要由插件层面负责重连？
           this.client = null
           break
         }
@@ -168,7 +170,7 @@ export const name = 'nats'
 export const inject = ['logger']
 
 export function apply(ctx: Context, config: Config) {
-  ctx.plugin(NatsService)
+  ctx.plugin(NatsService,config)
 }
 
 // --- 模块增强 (TypeScript) ---

@@ -30,7 +30,7 @@ export const Authen = Schema.intersect([
 ])
 
 export const TLS = Schema.object({
-  handshakeFirst: Schema.boolean().default(false),
+  handshakeFirst: Schema.boolean().required(),
   certFile: Schema.path(),
   cert: Schema.string().role('textarea'),
   caFile: Schema.path(),
@@ -46,6 +46,7 @@ export const TLS = Schema.object({
  * @returns NATS 连接选项
  */
 export async function schemaToConnectionOptions(config: Config): Promise<ConnectionOptions> {
+  // console.log(config);
   const options: ConnectionOptions = {
     servers: config.servers,
     noRandomize: config.noRandomize,
@@ -78,20 +79,22 @@ export async function schemaToConnectionOptions(config: Config): Promise<Connect
   // 处理 TLS 配置
   if (config.tlsEnabled) {
     const tlsOptions: TlsOptions = {};
+    tlsOptions.handshakeFirst = config.tlsConfig.handshakeFirst;
 
-    if (config.tlsConfig.handshakeFirst !== undefined) {
-      tlsOptions.handshakeFirst = config.tlsConfig.handshakeFirst;
+    if (config.tlsConfig.certFile) {
+      tlsOptions.certFile = await readFile(config.tlsConfig.certFile, 'utf8');
     }
-
-    tlsOptions.certFile = await readFile(config.tlsConfig.certFile, 'utf8');
     tlsOptions.cert = config.tlsConfig.cert;
 
-    tlsOptions.keyFile = await readFile(config.tlsConfig.keyFile, 'utf8');
+    if (config.tlsConfig.keyFile) {
+      tlsOptions.keyFile = await readFile(config.tlsConfig.keyFile, 'utf8');
+    }
     tlsOptions.key = config.tlsConfig.key;
 
-    tlsOptions.caFile = await readFile(config.tlsConfig.caFile, 'utf8');
+    if (config.tlsConfig.caFile) {
+      tlsOptions.caFile = await readFile(config.tlsConfig.caFile, 'utf8');
+    }
     tlsOptions.ca = config.tlsConfig.ca;
-
 
     options.tls = tlsOptions;
   }
