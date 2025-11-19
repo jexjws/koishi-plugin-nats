@@ -7,3 +7,7 @@ NATS 是一个简单、安全且高性能的开源数据层，专为云原生应
 ## Special thanks
 
 开发参考：koishi-plugin-redis
+
+## Tips
+
+插件里的 devDependencies 是按照 https://forum.koishi.xyz/t/topic/6732/2 添加的，目的是实现插件源码推到github后自动发布到npm。

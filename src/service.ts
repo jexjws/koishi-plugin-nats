@@ -70,12 +70,10 @@ export const Config =
 class NatsService extends Service {
   public client: NatsConnection | null = null;
   #l: Logger;
-  #ctx: Context;
   constructor(ctx: Context, config: Config) {
-    super()
+    super(ctx, 'nats')
     this.config = config
     this.#l = ctx.logger(name)
-    this.#ctx = ctx
   }
 
   async start() {
@@ -170,20 +168,7 @@ export const name = 'nats'
 export const inject = ['logger']
 
 export function apply(ctx: Context, config: Config) {
-  // 加载本地化资源
-  ctx.i18n.define('zh-CN', require('./locales/zh-CN'))
-  ctx.i18n.define('en-US', require('./locales/en-US'))
-  // 1. 实例化服务。
-  // 在 Service 的构造函数中，
-  const natsService = new NatsService(ctx, config)
-  
-  ctx.on('ready', async () => {
-    await natsService.start()
-  })
-
-  ctx.on('dispose', async () => {
-    await natsService.stop()
-  })
+  ctx.plugin(NatsService)
 }
 
 // --- 模块增强 (TypeScript) ---

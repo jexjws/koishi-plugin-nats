@@ -1,14 +1,14 @@
 {
   "name": "koishi-plugin-nats",
   "description": "本插件是对 nats.js 的封装。NATS 是一个简单、安全且高性能的开源数据层，专为云原生应用、物联网消息传递和微服务架构而设计。",
-  "version": "0.9.1",
+  "version": "0.9.5",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
     "lib",
     "dist"
   ],
-  "repository": {                       
+  "repository": {
     "type": "git",
     "url": "git+https://github.com/jexjws/koishi-plugin-nats.git"
   },
@@ -19,10 +19,22 @@
     "nats",
     "service"
   ],
+  "service": {
+    "required": [
+      "logger"
+    ],
+    "implements": [
+      "nats"
+    ]
+  },
   "peerDependencies": {
     "koishi": "^4.18.7"
   },
   "dependencies": {
     "nats": "^2.29.3"
+  },
+  "devDependencies": {
+    "koishi": "^4.18.9",
+    "typescript": "^5.9.3"
   }
 }

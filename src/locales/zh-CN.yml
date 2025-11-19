@@ -1,6 +1,3 @@
-commands:
-  nats:
-    description: NATS 消息队列服务
 
 _config:
   servers: NATS 服务器 URL
