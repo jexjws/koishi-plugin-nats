@@ -28,7 +28,7 @@ jobs:
         run: yarn build
 
       - name: Publish to NPM
-        run: npm publish --access public
+        run: npm publish --access --provenance public
 
       - name: Show NPM logs on failure
         if: failure()
